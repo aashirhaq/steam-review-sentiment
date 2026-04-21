@@ -1,4 +1,4 @@
-# Steam Review Analytics
+# Steam Review Sentiment
 
 A four-stage pipeline that fetches Steam game reviews, scores them with a
 pre-trained sentiment model, aggregates the results, and displays everything
@@ -24,7 +24,7 @@ in an interactive Streamlit dashboard.
 ## Project structure
 
 ```
-steam-review-analytics/
+steam-review-sentiment/
 ├── run_pipeline.py            ← orchestration script (start here)
 ├── fetch_reviews.py           ← Stage 1: Steam API review fetcher
 ├── sentiment_analysis.py      ← Stage 2: DistilBERT sentiment scorer
@@ -59,7 +59,7 @@ steam-review-analytics/
 
 ```bash
 git clone <your-repo-url>
-cd steam-review-analytics
+cd steam-review-sentiment
 ```
 
 Or simply copy all `.py` files into a single folder.
@@ -123,7 +123,7 @@ exists, so re-running the command is fast after the first run.
 
 ```
 2026-04-20 10:00:01 [INFO] ===================================================
-2026-04-20 10:00:01 [INFO]   Steam Review Analytics — Full Pipeline
+2026-04-20 10:00:01 [INFO]   Steam Review Sentiment — Full Pipeline
 2026-04-20 10:00:01 [INFO] ===================================================
 2026-04-20 10:00:01 [INFO] ▶  Running Step 1: Fetch reviews …
 2026-04-20 10:01:15 [INFO] ✔  Step 1: Fetch reviews complete.
