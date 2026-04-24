@@ -1,4 +1,5 @@
 import json
+import urllib.request
 from pathlib import Path
 
 import pandas as pd
@@ -17,41 +18,21 @@ st.set_page_config(
 OUTPUT_DIR  = Path("output")
 REPORT_PATH = OUTPUT_DIR / "sentiment_report.json"
 
+# URL of the latest release asset — updated automatically by GitHub Actions
+DATA_URL = "https://github.com/aashirhaq/steam-review-sentiment/releases/download/data-latest/sentiment_report.json"
+
 # ---------------------------------------------------------------------------
-# First-run pipeline — executes once when no data exists
+# Download report from GitHub Release if not cached locally
 # ---------------------------------------------------------------------------
-
-def _run_pipeline() -> None:
-    OUTPUT_DIR.mkdir(exist_ok=True)
-
-    reviews_csv   = OUTPUT_DIR / "reviews.csv"
-    sentiment_csv = OUTPUT_DIR / "reviews_with_sentiment.csv"
-
-    if not reviews_csv.exists():
-        with st.status("Step 1 / 3 — Fetching Steam reviews…", expanded=True):
-            import fetch_reviews
-            fetch_reviews.main()
-
-    if not sentiment_csv.exists():
-        with st.status("Step 2 / 3 — Running sentiment analysis (may take 10–20 min on CPU)…", expanded=True):
-            import sentiment_analysis
-            sentiment_analysis.main()
-
-    if not REPORT_PATH.exists():
-        with st.status("Step 3 / 3 — Building sentiment report…", expanded=True):
-            import analyze_sentiment
-            analyze_sentiment.main()
-
 
 if not REPORT_PATH.exists():
-    st.title("🎮 Steam Review Analytics")
-    st.info(
-        "**First launch** — running the full data pipeline. "
-        "This takes **5–20 minutes** on first run depending on hardware. "
-        "The dashboard loads automatically when it finishes."
-    )
-    _run_pipeline()
-    st.success("Pipeline complete! Loading dashboard…")
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    with st.spinner("Fetching latest sentiment data…"):
+        try:
+            urllib.request.urlretrieve(DATA_URL, REPORT_PATH)
+        except Exception as e:
+            st.error(f"Failed to download data: {e}")
+            st.stop()
     st.rerun()
 
 # ---------------------------------------------------------------------------

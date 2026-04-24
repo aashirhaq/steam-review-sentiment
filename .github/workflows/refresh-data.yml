@@ -1,0 +1,55 @@
+name: Refresh Steam Sentiment Data
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # daily at 3am UTC
+  workflow_dispatch:        # allows manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-pipeline.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install pipeline dependencies
+        run: pip install -r requirements-pipeline.txt
+
+      - name: Step 1 — Fetch Steam reviews
+        run: python fetch_reviews.py
+
+      - name: Step 2 — Run sentiment analysis
+        run: python sentiment_analysis.py
+
+      - name: Step 3 — Build sentiment report
+        run: python analyze_sentiment.py
+
+      - name: Delete old data release
+        run: gh release delete data-latest --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish new data release
+        run: |
+          gh release create data-latest \
+            output/sentiment_report.json \
+            --title "Latest Sentiment Data ($(date -u +%Y-%m-%d))" \
+            --notes "Auto-refreshed by GitHub Actions on $(date -u '+%Y-%m-%d %H:%M UTC')"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
