@@ -14,7 +14,45 @@ st.set_page_config(
     layout="wide",
 )
 
-REPORT_PATH = Path("output/sentiment_report.json")
+OUTPUT_DIR  = Path("output")
+REPORT_PATH = OUTPUT_DIR / "sentiment_report.json"
+
+# ---------------------------------------------------------------------------
+# First-run pipeline — executes once when no data exists
+# ---------------------------------------------------------------------------
+
+def _run_pipeline() -> None:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    reviews_csv   = OUTPUT_DIR / "reviews.csv"
+    sentiment_csv = OUTPUT_DIR / "reviews_with_sentiment.csv"
+
+    if not reviews_csv.exists():
+        with st.status("Step 1 / 3 — Fetching Steam reviews…", expanded=True):
+            import fetch_reviews
+            fetch_reviews.main()
+
+    if not sentiment_csv.exists():
+        with st.status("Step 2 / 3 — Running sentiment analysis (may take 10–20 min on CPU)…", expanded=True):
+            import sentiment_analysis
+            sentiment_analysis.main()
+
+    if not REPORT_PATH.exists():
+        with st.status("Step 3 / 3 — Building sentiment report…", expanded=True):
+            import analyze_sentiment
+            analyze_sentiment.main()
+
+
+if not REPORT_PATH.exists():
+    st.title("🎮 Steam Review Analytics")
+    st.info(
+        "**First launch** — running the full data pipeline. "
+        "This takes **5–20 minutes** on first run depending on hardware. "
+        "The dashboard loads automatically when it finishes."
+    )
+    _run_pipeline()
+    st.success("Pipeline complete! Loading dashboard…")
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # Load data (cached so it only reads from disk once)
@@ -22,12 +60,6 @@ REPORT_PATH = Path("output/sentiment_report.json")
 
 @st.cache_data
 def load_report() -> dict:
-    if not REPORT_PATH.exists():
-        st.error(
-            f"Report file not found at `{REPORT_PATH}`. "
-            "Run `analyze_sentiment.py` first."
-        )
-        st.stop()
     with REPORT_PATH.open(encoding="utf-8") as f:
         return json.load(f)
 
