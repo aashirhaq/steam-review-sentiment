@@ -12,8 +12,8 @@ Output: output/sentiment_report.json
 import csv
 import json
 import logging
+import math
 import re
-import string
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -45,6 +45,17 @@ STOPWORDS = {
     "other","after","which","how","who","much","any","still","over","back",
     "really","good","great","bad","play","played","playing","played","hours",
     "people","every","well","way",
+    # contraction fragments (apostrophe stripped by tokenizer)
+    "don","doesn","didn","isn","aren","wasn","weren","won","can","couldn",
+    "wouldn","shouldn","hadn","haven","nt",
+    # common filler verbs and conjunctions missed by original list
+    "because","think","know","want","make","say","use","see","need","feel",
+    "look","go","come","take","give","find","let","seem","seems","put","keep",
+    "actually","never","always","first","last","little","new","old","own",
+    "same","few","both","many","most","such","too","here","where","while",
+    "though","through","before","between","against","without","must","might",
+    "act","things","thing","lot","something","anything","nothing","everything",
+    "someone","anyone","everyone","making","getting","going","doing","being",
 }
 
 # ---------------------------------------------------------------------------
@@ -60,18 +71,45 @@ def tokenize(text: str) -> list[str]:
     return [w for w in words if w not in STOPWORDS and len(w) > 2]
 
 
-def top_words(word_list: list[str], n: int = TOP_N_WORDS) -> list[dict]:
-    """Return the top-N words as [{"word": ..., "count": ...}, ...]."""
-    return [
-        {"word": word, "count": count}
-        for word, count in Counter(word_list).most_common(n)
-    ]
+def compute_idf(all_texts: list[str]) -> dict[str, float]:
+    """Smoothed IDF over a corpus of review texts. Each text is one document."""
+    n_docs = len(all_texts)
+    doc_freq: Counter = Counter()
+    for text in all_texts:
+        doc_freq.update(set(tokenize(text)))
+    return {
+        word: math.log((n_docs + 1) / (freq + 1)) + 1
+        for word, freq in doc_freq.items()
+    }
+
+
+def tfidf_top_words(
+    target_texts: list[str],
+    idf: dict[str, float],
+    n: int = TOP_N_WORDS,
+) -> list[dict]:
+    """
+    Return top-N words by TF-IDF score.
+    TF is the raw count across all target reviews; IDF is pre-computed from
+    the full corpus (positive + negative) so words common to both groups are
+    penalised — surfacing words that are distinctive to this sentiment group.
+    """
+    tf: Counter = Counter(w for text in target_texts for w in tokenize(text))
+    scores = {word: count * idf.get(word, 1.0) for word, count in tf.items()}
+    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n]
+    return [{"word": word, "count": round(score, 2)} for word, score in top]
 
 # ---------------------------------------------------------------------------
 # Aggregation
 # ---------------------------------------------------------------------------
 
 def build_report(rows: list[dict]) -> dict:
+    # IDF computed once across the entire corpus so words common to both
+    # positive and negative reviews are penalised in both directions.
+    all_texts = [r["review_text"] for r in rows if r["review_text"].strip()]
+    idf = compute_idf(all_texts)
+    log.info("IDF computed over %d reviews (%d unique tokens)", len(all_texts), len(idf))
+
     # Bucket rows by game
     by_game: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
@@ -109,15 +147,8 @@ def build_report(rows: list[dict]) -> dict:
             if neg_rows else 0.0
         )
 
-        # Word frequency — only English-ish reviews (non-empty text)
-        pos_words = [
-            w for r in pos_rows
-            for w in tokenize(r["review_text"])
-        ]
-        neg_words = [
-            w for r in neg_rows
-            for w in tokenize(r["review_text"])
-        ]
+        pos_texts = [r["review_text"] for r in pos_rows]
+        neg_texts = [r["review_text"] for r in neg_rows]
 
         games_stats[game_name] = {
             "total_reviews": total,
@@ -134,8 +165,8 @@ def build_report(rows: list[dict]) -> dict:
             "avg_sentiment_confidence": round(avg_conf, 4),
             "avg_positive_confidence":  round(avg_pos_conf, 4),
             "avg_negative_confidence":  round(avg_neg_conf, 4),
-            "top_words_positive": top_words(pos_words),
-            "top_words_negative": top_words(neg_words),
+            "top_words_positive": tfidf_top_words(pos_texts, idf),
+            "top_words_negative": tfidf_top_words(neg_texts, idf),
         }
 
     # Overall totals across all games
@@ -147,14 +178,8 @@ def build_report(rows: list[dict]) -> dict:
     )
     total_all = len(rows)
 
-    all_pos_words = [
-        w for r in rows if r["sentiment_label"] == "POSITIVE"
-        for w in tokenize(r["review_text"])
-    ]
-    all_neg_words = [
-        w for r in rows if r["sentiment_label"] == "NEGATIVE"
-        for w in tokenize(r["review_text"])
-    ]
+    all_pos_texts = [r["review_text"] for r in rows if r["sentiment_label"] == "POSITIVE"]
+    all_neg_texts = [r["review_text"] for r in rows if r["sentiment_label"] == "NEGATIVE"]
 
     report = {
         "overall": {
@@ -165,8 +190,8 @@ def build_report(rows: list[dict]) -> dict:
                 for lbl, cnt in all_labels.items()
             },
             "avg_sentiment_confidence": round(overall_avg_conf, 4),
-            "top_words_positive": top_words(all_pos_words),
-            "top_words_negative": top_words(all_neg_words),
+            "top_words_positive": tfidf_top_words(all_pos_texts, idf),
+            "top_words_negative": tfidf_top_words(all_neg_texts, idf),
         },
         "by_game": games_stats,
     }
